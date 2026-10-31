@@ -1,0 +1,13 @@
+snap.exe
+snap.dll
+*.obj
+*.pdb
+bin/
+obj/
+Release/
+Debug/
+*.swp
+*.swo
+*~
+.DS_Store
+__pycache__/
