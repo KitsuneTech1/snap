@@ -17,7 +17,7 @@ Then capture the active screen:
 ```bash
 snap.exe -List                    # List all visible windows
 snap.exe                          # Capture active screen
-snap.exe -App firefox             # Capture by window name
+snap.exe -App firefox             # Capture a matching visible window, if Firefox is open
 snap.exe -Region "0,0,800,600"    # Capture a specific region
 snap.exe -Mode window             # Capture active window only
 ```
@@ -31,7 +31,7 @@ snap.exe -Mode window             # Capture active window only
 
 - Windows 7 or later
 - .NET Framework 4.0+ (for csc.exe, included with Windows)
-- For OCR: Tesseract 4.0+ on PATH (optional; install from https://github.com/UB-Mannheim/tesseract)
+- For OCR: Windows OCR language support. No separate OCR package or network service is required.
 
 ### Runtime Requirements
 
@@ -83,12 +83,15 @@ Output: JSON with keys:
 
 Exit codes:
 - 0: Success.
-- 1: Invalid arguments, no window found matching the filter, or region out of bounds.
-- 2: I/O error writing the image.
+- 1: Invalid arguments, no visible window found matching the filter, or region out of bounds.
+- 2: Capture or I/O error. The JSON output contains the error message.
+
+Capture commands need an interactive Windows desktop. They do not open, focus, or change any window. In a
+non-interactive session, they return a JSON error with exit code 2.
 
 ### snap.ps1
 
-A PowerShell wrapper that adds OCR support via Tesseract. The executable snap.exe is preferred when you don't need text.
+A PowerShell wrapper that adds Windows built-in OCR. The executable snap.exe is preferred when you don't need text.
 
 ```bash
 powershell -NoProfile -ExecutionPolicy Bypass -File snap.ps1 [options] [-Ocr]

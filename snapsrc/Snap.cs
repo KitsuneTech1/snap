@@ -90,9 +90,9 @@ static class Snap {
     return b.ToString();
   }
 
-  static int Error(string message) {
+  static int Error(string message, int exitCode = 1) {
     Console.WriteLine("{\"error\":\"" + Esc(message) + "\",\"monitors\":" + MonitorsJson() + "}");
-    return 1;
+    return exitCode;
   }
 
   static bool TryParseRegion(string text, out int x, out int y, out int w, out int h, out string error) {
@@ -219,25 +219,31 @@ static class Snap {
       Rectangle b = Screen.PrimaryScreen.Bounds;
       x = b.X; y = b.Y; w2 = b.Width; h2 = b.Height; used += "-fallback";
     }
-    if (bmp == null) {
-      bmp = new Bitmap(w2, h2);
-      using (Graphics g = Graphics.FromImage(bmp)) g.CopyFromScreen(x, y, 0, 0, bmp.Size);
-    }
-    if (maxWidth > 0 && bmp.Width > maxWidth) {
-      int nw = maxWidth, nh = (int)Math.Round(bmp.Height * (double)maxWidth / bmp.Width);
-      Bitmap small = new Bitmap(nw, nh);
-      using (Graphics g = Graphics.FromImage(small)) { g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.DrawImage(bmp, 0, 0, nw, nh); }
-      bmp.Dispose(); bmp = small;
-    }
-
+    int sw, sh;
     string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Temp\claude-snaps");
-    if (outPath == null) {
-      Directory.CreateDirectory(dir);
-      outPath = Path.Combine(dir, "snap-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + ".png");
+    try {
+      if (bmp == null) {
+        bmp = new Bitmap(w2, h2);
+        using (Graphics g = Graphics.FromImage(bmp)) g.CopyFromScreen(x, y, 0, 0, bmp.Size);
+      }
+      if (maxWidth > 0 && bmp.Width > maxWidth) {
+        int nw = maxWidth, nh = (int)Math.Round(bmp.Height * (double)maxWidth / bmp.Width);
+        Bitmap small = new Bitmap(nw, nh);
+        using (Graphics g = Graphics.FromImage(small)) { g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.DrawImage(bmp, 0, 0, nw, nh); }
+        bmp.Dispose(); bmp = small;
+      }
+
+      if (outPath == null) {
+        Directory.CreateDirectory(dir);
+        outPath = Path.Combine(dir, "snap-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + ".png");
+      }
+      bmp.Save(outPath, ImageFormat.Png);
+      sw = bmp.Width; sh = bmp.Height;
+      bmp.Dispose();
+    } catch (Exception ex) {
+      if (bmp != null) bmp.Dispose();
+      return Error("capture failed: " + ex.Message, 2);
     }
-    bmp.Save(outPath, ImageFormat.Png);
-    int sw = bmp.Width, sh = bmp.Height;
-    bmp.Dispose();
 
     try {
       if (Directory.Exists(dir)) {

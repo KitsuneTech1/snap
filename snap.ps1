@@ -23,9 +23,10 @@ if (-not (Test-Path $exe)) {
   exit 1
 }
 $json = & $exe @pass
+$nativeExit = $LASTEXITCODE
 $obj = $null
 try { $obj = $json | ConvertFrom-Json } catch { }
-if (-not $ocr -or -not $obj -or -not $obj.path) { Write-Output $json; if ($obj -and $obj.error) { exit 2 }; exit 0 }
+if (-not $ocr -or -not $obj -or -not $obj.path) { Write-Output $json; exit $nativeExit }
 
 $o = & (Join-Path $PSScriptRoot 'ocr.ps1') -Path $obj.path -MaxChars 2000 | ConvertFrom-Json
 $obj | Add-Member -NotePropertyName ocr -NotePropertyValue $o.ocr -Force
