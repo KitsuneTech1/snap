@@ -1,9 +1,12 @@
 # Build snap.exe from Snap.cs using the .NET Framework csc.exe
 $ErrorActionPreference = 'Stop'
 
-$csc = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-if (-not (Test-Path $csc)) {
-    Write-Error "csc.exe not found at $csc"
+$csc = @(
+    'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe',
+    'C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe'
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $csc) {
+    Write-Error 'csc.exe not found under C:\Windows\Microsoft.NET\Framework or Framework64\v4.0.30319'
     exit 1
 }
 

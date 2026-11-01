@@ -149,3 +149,31 @@ def test_native_invalid_mode_is_rejected(native_executable):
     result = run_native(native_executable, "-Mode", "unknown")
     assert result.returncode == 1
     assert "error" in json.loads(result.stdout)
+
+
+def test_native_capture_failure_is_structured(native_executable, work_tmp):
+    result = run_native(native_executable, "-Region", "0,0,800,600", "-Out", str(work_tmp / "missing" / "out.png"))
+    assert result.returncode == 2
+    payload = json.loads(result.stdout)
+    assert payload["error"].startswith("capture failed:")
+
+
+def test_powershell_wrapper_preserves_native_error_code(native_executable):
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ROOT / "snap.ps1"),
+            "-App",
+            "__focus_snap_missing_window__",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "error" in json.loads(result.stdout)
