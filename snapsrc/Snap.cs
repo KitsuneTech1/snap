@@ -90,22 +90,72 @@ static class Snap {
     return b.ToString();
   }
 
+  static int Error(string message) {
+    Console.WriteLine("{\"error\":\"" + Esc(message) + "\",\"monitors\":" + MonitorsJson() + "}");
+    return 1;
+  }
+
+  static bool TryParseRegion(string text, out int x, out int y, out int w, out int h, out string error) {
+    x = y = w = h = 0;
+    error = null;
+    string[] parts = text.Split(',');
+    if (parts.Length != 4) { error = "region must be x,y,width,height"; return false; }
+    if (!int.TryParse(parts[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out x) ||
+        !int.TryParse(parts[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out y) ||
+        !int.TryParse(parts[2].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out w) ||
+        !int.TryParse(parts[3].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out h)) {
+      error = "region must contain four integers"; return false;
+    }
+    if (w <= 0 || h <= 0) { error = "region width and height must be positive"; return false; }
+    Rectangle virtualScreen = SystemInformation.VirtualScreen;
+    long right = (long)x + w, bottom = (long)y + h;
+    if (x < virtualScreen.Left || y < virtualScreen.Top ||
+        right > (long)virtualScreen.Right || bottom > (long)virtualScreen.Bottom) {
+      error = "region is out of bounds"; return false;
+    }
+    return true;
+  }
+
+  static void SetDpiAwareness() {
+    try {
+      if (SetProcessDpiAwarenessContext((IntPtr)(-4))) return;
+    } catch (EntryPointNotFoundException) { }
+    try { SetProcessDPIAware(); } catch (EntryPointNotFoundException) { }
+  }
+
   [STAThread]
   static int Main(string[] args) {
     long t0 = DateTime.UtcNow.Ticks;
-    if (!SetProcessDpiAwarenessContext((IntPtr)(-4))) SetProcessDPIAware();
+    SetDpiAwareness();
 
     string mode = "auto", app = null, region = null, outPath = null;
-    bool list = false; int maxWidth = 1600;
+    bool list = false; int maxWidth = 0;
     for (int i = 0; i < args.Length; i++) {
       string a = args[i].ToLowerInvariant();
       if (a == "-list") list = true;
-      else if (a == "-app" && i + 1 < args.Length) app = args[++i];
-      else if (a == "-region" && i + 1 < args.Length) region = args[++i];
-      else if (a == "-mode" && i + 1 < args.Length) mode = args[++i].ToLowerInvariant();
-      else if (a == "-maxwidth" && i + 1 < args.Length) int.TryParse(args[++i], out maxWidth);
-      else if (a == "-out" && i + 1 < args.Length) outPath = args[++i];
+      else if (a == "-app") {
+        if (i + 1 >= args.Length) return Error("-App requires a window name");
+        app = args[++i];
+      } else if (a == "-region") {
+        if (i + 1 >= args.Length) return Error("-Region requires x,y,width,height");
+        region = args[++i];
+      } else if (a == "-mode") {
+        if (i + 1 >= args.Length) return Error("-Mode requires monitor, window, all, or auto");
+        mode = args[++i].ToLowerInvariant();
+      } else if (a == "-maxwidth") {
+        if (i + 1 >= args.Length || !int.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out maxWidth) || maxWidth < 0)
+          return Error("-MaxWidth requires a non-negative integer");
+      } else if (a == "-out") {
+        if (i + 1 >= args.Length) return Error("-Out requires a file path");
+        outPath = args[++i];
+      } else return Error("unknown option '" + a + "'");
     }
+
+    if (mode != "monitor" && mode != "window" && mode != "all" && mode != "auto")
+      return Error("invalid mode '" + mode + "'");
+    int regionX = 0, regionY = 0, regionW = 0, regionH = 0; string regionError;
+    if (region != null && !TryParseRegion(region, out regionX, out regionY, out regionW, out regionH, out regionError))
+      return Error(regionError);
 
     if (list) {
       StringBuilder b = new StringBuilder("[");
@@ -145,7 +195,7 @@ static class Snap {
           ? "window '" + Esc(app) + "' is minimized; snap never restores windows"
           : "no visible window matches '" + Esc(app) + "'; run -List";
         Console.WriteLine("{\"error\":\"" + why + "\",\"monitors\":" + MonitorsJson() + "}");
-        return 2;
+        return 1;
       }
       target = hit; x = hit.x; y = hit.y; w2 = hit.w; h2 = hit.hgt; used = "app";
       Bitmap full = new Bitmap(w2, h2);
@@ -156,9 +206,7 @@ static class Snap {
         if (ok) bmp = full; else { full.Dispose(); used = "app-screen"; }
       }
     } else if (region != null) {
-      string[] p = region.Split(',');
-      x = int.Parse(p[0].Trim()); y = int.Parse(p[1].Trim());
-      w2 = int.Parse(p[2].Trim()); h2 = int.Parse(p[3].Trim());
+      x = regionX; y = regionY; w2 = regionW; h2 = regionH;
       used = "region";
     } else {
       if (mode == "auto") { used = "monitor"; foreach (string t in Terminals) if (t == fg.proc) { used = "all"; break; } }

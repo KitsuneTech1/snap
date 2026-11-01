@@ -19,7 +19,7 @@ $pass = @()
 foreach ($a in $args) { if ("$a".ToLower() -eq '-ocr') { $ocr = $true } else { $pass += $a } }
 
 if (-not (Test-Path $exe)) {
-  Write-Output ('{"error":"snap.exe missing; build it: scripts\snapsrc\build.cmd"}')
+  Write-Output ('{"error":"snap.exe missing; build it: build.ps1"}')
   exit 1
 }
 $json = & $exe @pass
