@@ -39,6 +39,18 @@ snap.exe -Mode window             # Capture active window only
 - .NET Framework 4.0+ (already installed on most Windows systems)
 - Optional: tesseract.exe for OCR
 
+For `snapedit.py`, install Python 3.8 or newer and Pillow. To run the test suite, also install pytest:
+
+```bash
+python -m pip install Pillow pytest
+```
+
+Run the offline test suite with:
+
+```bash
+python -m pytest -q tests
+```
+
 ## Usage
 
 ### snap.exe
@@ -58,17 +70,20 @@ Options:
   - `all`: Capture all monitors.
   - `auto`: If a foreground window is fullscreen, capture it; otherwise capture the monitor.
 - `-Region "x,y,w,h"`: Capture a specific rectangular region (in pixels).
-- `-MaxWidth n`: If the output image exceeds this width, scale it down. Default: no scaling. Does not crop, only scales proportionally.
+- `-MaxWidth n`: If the output image exceeds this width, scale it down. Default: no scaling. Does not crop, only scales proportionally. Use `0` to disable scaling explicitly.
 
 Output: JSON with keys:
 - `path`: Full path to the PNG file (in %LOCALAPPDATA%\Temp\claude-snaps).
-- `width`, `height`: Image dimensions.
-- `monitor`: Display string (e.g., "2560x1440@0,0").
+- `mode`, `x`, `y`, `width`, `height`: The selected capture area.
+- `saved_width`, `saved_height`: The dimensions after optional scaling.
+- `title`, `process`, `front`: The selected and foreground window metadata.
+- `monitors`: Display strings for the available monitors.
+- `ms`: Capture duration in milliseconds.
 - `error`: If something went wrong, the error message instead of a path.
 
 Exit codes:
 - 0: Success.
-- 1: No window found matching the filter, or region out of bounds.
+- 1: Invalid arguments, no window found matching the filter, or region out of bounds.
 - 2: I/O error writing the image.
 
 ### snap.ps1
