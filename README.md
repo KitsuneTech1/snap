@@ -4,6 +4,8 @@
 
 Fast, focus-safe screen and window capture for Windows with optional OCR text extraction. Captures without stealing focus, with metadata and Windows built-in OCR support.
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) ![C# / PowerShell / Python](https://img.shields.io/badge/C%23%20%2F%20PowerShell%20%2F%20Python-blue)
+
 FocusSnap is designed for automation, accessibility tools, and agents that need to take screenshots without interrupting the user's work or focus context.
 
 ## Quick Start
@@ -39,6 +41,7 @@ snap.exe -Mode window             # Capture active window only
 
 - Windows 7 or later
 - .NET Framework 4.0+ (already installed on most Windows systems)
+
 For `snapedit.py`, install Python 3.8 or newer and Pillow. To run the test suite, also install pytest:
 
 ```bash
