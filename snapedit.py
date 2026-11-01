@@ -36,6 +36,7 @@ Fonts: Segoe UI Semibold for labels, Consolas for numbers. Stdlib plus Pillow.
 """
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
@@ -69,6 +70,11 @@ def unit(img):
 def clean(img):
     """New image from raw pixels: drops every metadata chunk the source carried."""
     return Image.frombytes("RGBA", img.size, img.convert("RGBA").tobytes())
+
+
+def load_clean(src):
+    with Image.open(src) as original:
+        return clean(original)
 
 
 def op_redact(img, o):
@@ -210,7 +216,8 @@ def ocr_data(src):
                            creationflags=0x08000000 if os.name == "nt" else 0)
         if r.returncode != 0 or not os.path.exists(side):
             raise SystemExit("ocr failed: " + (r.stderr or r.stdout)[-400:])
-    return json.load(open(side, encoding="utf-8-sig"))
+    with open(side, encoding="utf-8-sig") as handle:
+        return json.load(handle)
 
 
 def find_text(src, phrase):
@@ -262,6 +269,8 @@ def expand_text_ops(src, ops):
                 for w in line["words"]:
                     if w.get("secret"):
                         out.append({"redact": [w["x"] - 4, w["y"] - 4, w["w"] + 8, w["h"] + 8], "style": "solid"})
+        elif "redact_secrets" in o:
+            continue
         else:
             out.append(o)
     return out
@@ -270,9 +279,112 @@ def expand_text_ops(src, ops):
 ORDER = ["redact", "spotlight", "box", "arrow", "callout", "text", "crop", "zoom", "max_width", "caption", "frame"]
 
 
+def _validate_number(value, name, *, integer=False, minimum=None, maximum=None):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{name} must be a finite number")
+    if integer and not isinstance(value, int):
+        raise ValueError(f"{name} must be an integer")
+    if minimum is not None and value < minimum:
+        raise ValueError(f"{name} must be at least {minimum}")
+    if maximum is not None and value > maximum:
+        raise ValueError(f"{name} must be at most {maximum}")
+
+
+def _validate_coords(value, name, count):
+    if not isinstance(value, list) or len(value) != count:
+        raise ValueError(f"{name} must contain {count} values")
+    for i, item in enumerate(value):
+        _validate_number(item, f"{name}[{i}]", integer=True)
+
+
+def _validate_color(value, name):
+    if not isinstance(value, str) or len(value.lstrip("#")) != 6:
+        raise ValueError(f"{name} must be a six-digit hex color")
+    try:
+        int(value.lstrip("#"), 16)
+    except ValueError:
+        raise ValueError(f"{name} must be a six-digit hex color") from None
+
+
+def validate_ops(ops):
+    """Reject malformed operation data before drawing code can fail ambiguously."""
+    if not isinstance(ops, list):
+        raise ValueError("ops must be a JSON list")
+    allowed = set(ORDER) | {"box_text", "callout_text", "redact_text", "redact_secrets"}
+    for index, op in enumerate(ops):
+        if not isinstance(op, dict):
+            raise ValueError(f"operation {index} must be an object")
+        keys = [key for key in allowed if key in op]
+        if len(keys) != 1:
+            raise ValueError(f"operation {index} must contain exactly one known operation")
+        key = keys[0]
+        allowed_fields = {
+            "redact": {"redact", "style"}, "spotlight": {"spotlight", "dim"},
+            "box": {"box", "label", "color"}, "arrow": {"arrow", "color"},
+            "callout": {"callout", "n", "color"}, "text": {"text", "at", "color"},
+            "crop": {"crop"}, "zoom": {"zoom"}, "max_width": {"max_width"},
+            "caption": {"caption", "pos"}, "frame": {"frame", "bg", "pad"},
+            "box_text": {"box_text", "label", "color", "nth", "pad"},
+            "callout_text": {"callout_text", "n", "color", "nth", "pad"},
+            "redact_text": {"redact_text", "style", "nth", "pad"},
+            "redact_secrets": {"redact_secrets"},
+        }
+        unknown = set(op) - allowed_fields[key]
+        if unknown:
+            raise ValueError(f"operation {index} has unknown field(s): {', '.join(sorted(unknown))}")
+        if key in {"redact", "spotlight", "box", "crop"}:
+            _validate_coords(op[key], key, 4)
+            if key in {"redact", "spotlight", "box", "crop"} and op[key][2] <= 0:
+                raise ValueError(f"{key} width must be positive")
+            if key in {"redact", "spotlight", "box", "crop"} and op[key][3] <= 0:
+                raise ValueError(f"{key} height must be positive")
+        elif key == "arrow":
+            _validate_coords(op[key], key, 4)
+        elif key in {"callout", "text"}:
+            _validate_coords(op.get("callout" if key == "callout" else "at"), "callout" if key == "callout" else "at", 2)
+            if key == "text" and not isinstance(op.get("text"), str):
+                raise ValueError("text must be a string")
+        elif key == "zoom":
+            _validate_number(op[key], "zoom", minimum=1, maximum=4)
+        elif key == "max_width":
+            _validate_number(op[key], "max_width", integer=True, minimum=1)
+        elif key == "caption":
+            if not isinstance(op[key], str):
+                raise ValueError("caption must be a string")
+        elif key == "frame":
+            if not isinstance(op[key], bool):
+                raise ValueError("frame must be true or false")
+            if "pad" in op:
+                _validate_number(op["pad"], "pad", integer=True, minimum=0)
+        elif key in {"box_text", "callout_text", "redact_text"}:
+            if not isinstance(op[key], str) or not op[key].strip():
+                raise ValueError(f"{key} must be a non-empty string")
+            if "nth" in op:
+                _validate_number(op["nth"], "nth", integer=True, minimum=0)
+            if "pad" in op:
+                _validate_number(op["pad"], "pad", integer=True, minimum=0)
+        elif key == "redact_secrets" and not isinstance(op[key], bool):
+            raise ValueError("redact_secrets must be true or false")
+
+        if "style" in op and op["style"] not in {"solid", "blur", "pixelate"}:
+            raise ValueError("style must be solid, blur, or pixelate")
+        for color_name in ("color", "bg"):
+            if color_name in op:
+                _validate_color(op[color_name], color_name)
+        if "label" in op and not isinstance(op["label"], str):
+            raise ValueError("label must be a string")
+        if "dim" in op:
+            _validate_number(op["dim"], "dim", minimum=0, maximum=1)
+        if "pos" in op and op["pos"] not in {"top", "bottom"}:
+            raise ValueError("pos must be top or bottom")
+
+    return ops
+
+
 def edit(src, ops):
+    validate_ops(ops)
     ops = expand_text_ops(src, ops)
-    img = clean(Image.open(src))
+    img = load_clean(src)
     kind = lambda o: next(k for k in ORDER if k in o)
     for o in sorted(ops, key=lambda o: ORDER.index(kind(o))):
         k = kind(o)
@@ -313,7 +425,9 @@ def save(img, out):
 
 
 def grid(src, out, step):
-    img = clean(Image.open(src))
+    if isinstance(step, bool) or not isinstance(step, int) or step <= 0:
+        raise ValueError("step must be a positive integer")
+    img = load_clean(src)
     d = ImageDraw.Draw(img)
     f = font(FONT_MONO, 13)
     for x in range(0, img.width, step):
@@ -326,7 +440,13 @@ def grid(src, out, step):
 
 
 def gif(srcs, out, ms, max_width):
-    frames = [clean(Image.open(s)) for s in srcs]
+    if not srcs:
+        raise ValueError("at least one image is required")
+    if isinstance(ms, bool) or not isinstance(ms, int) or ms < 0:
+        raise ValueError("ms must be a non-negative integer")
+    if isinstance(max_width, bool) or not isinstance(max_width, int) or max_width <= 0:
+        raise ValueError("max_width must be a positive integer")
+    frames = [load_clean(s) for s in srcs]
     W = min(max_width, max(f.width for f in frames))
     frames = [f.resize((W, round(f.height * W / f.width)), Image.LANCZOS) if f.width != W else f for f in frames]
     H = max(f.height for f in frames)
@@ -350,10 +470,14 @@ def main():
     a.add_argument("--ms", type=int, default=1400); a.add_argument("--max-width", type=int, default=1200)
     a = ap.parse_args()
     if a.cmd == "info":
-        w, h = Image.open(a.img).size
+        with Image.open(a.img) as image:
+            w, h = image.size
         print(json.dumps({"width": w, "height": h}))
     elif a.cmd == "grid":
-        grid(a.img, a.o, a.step)
+        try:
+            grid(a.img, a.o, a.step)
+        except (OSError, ValueError) as exc:
+            ap.error(str(exc))
         print(a.o)
     elif a.cmd == "ocr":
         d = ocr_data(a.img)
@@ -365,12 +489,18 @@ def main():
         print(json.dumps({"phrase": a.phrase, "matches": hits}))
         return 0 if hits else 3
     elif a.cmd == "edit":
-        raw = open(a.ops[1:], encoding="utf-8").read() if a.ops.startswith("@") else a.ops
-        img = edit(a.img, json.loads(raw))
+        try:
+            raw = open(a.ops[1:], encoding="utf-8").read() if a.ops.startswith("@") else a.ops
+            img = edit(a.img, json.loads(raw))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            ap.error(str(exc))
         save(img, a.o)
         print(json.dumps({"out": a.o, "width": img.width, "height": img.height}))
     else:
-        gif(a.imgs, a.o, a.ms, a.max_width)
+        try:
+            gif(a.imgs, a.o, a.ms, a.max_width)
+        except (OSError, ValueError) as exc:
+            ap.error(str(exc))
         print(a.o)
 
 

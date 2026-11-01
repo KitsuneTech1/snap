@@ -1,7 +1,7 @@
 import json
-import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -15,13 +15,26 @@ import snapedit
 
 
 @pytest.fixture
-def work_tmp():
-    path = ROOT / "test-artifacts"
-    path.mkdir(exist_ok=True)
-    try:
-        yield path
-    finally:
-        shutil.rmtree(path, ignore_errors=True)
+def work_tmp(request):
+    root = ROOT / "tests"
+    prefix = ".snap-test-" + uuid.uuid4().hex + "-"
+
+    def cleanup():
+        for path in root.glob(prefix + "*"):
+            if path.is_file() or path.is_symlink():
+                path.unlink()
+
+    request.addfinalizer(cleanup)
+    return _TestWorkspace(root, prefix)
+
+
+class _TestWorkspace:
+    def __init__(self, root, prefix):
+        self.root = root
+        self.prefix = prefix
+
+    def __truediv__(self, name):
+        return self.root / (self.prefix + str(name))
 
 
 @pytest.fixture
@@ -46,7 +59,7 @@ def test_info_reports_dimensions(sample_image):
 
 
 def test_edit_respects_input_coordinates_and_scaling(sample_image, work_tmp):
-    output = work_tmp / "edited.png"
+    output = sample_image.with_name(sample_image.stem + "-edited.png")
     result = snapedit.edit(
         str(sample_image),
         [{"crop": [0, 0, 20, 10]}, {"zoom": 2}, {"max_width": 30}],
@@ -95,26 +108,117 @@ def test_find_text_uses_cached_ocr_sidecar(sample_image):
     assert snapedit.find_text(str(sample_image), "start a trace") == [[2, 3, 30, 5]]
 
 
+def test_ocr_sidecar_masks_secret_words(work_tmp):
+    image = work_tmp / "ocr-input.png"
+    Image.new("RGBA", (40, 20), (20, 40, 80, 255)).save(image)
+    token = "sk_live_1234567890123456"
+    fixture = work_tmp / "ocr-result.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "width": 40,
+                "height": 20,
+                "lines": [
+                    {
+                        "Text": "token " + token,
+                        "Words": [
+                            {"Text": "token", "X": 2, "Y": 3, "Width": 10, "Height": 5},
+                            {"Text": token, "X": 14, "Y": 3, "Width": 20, "Height": 5},
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ROOT / "ocr.ps1"),
+            "-Path",
+            str(image),
+            "-TestResultJson",
+            str(fixture),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    sidecar_text = Path(str(image) + ".ocr.json").read_text(encoding="utf-8-sig")
+    sidecar = json.loads(sidecar_text)
+    assert token not in sidecar_text
+    assert sidecar["secrets"] == 1
+    assert sidecar["lines"][0]["words"][1]["t"] == "[SECRET HIDDEN]"
+    assert "[SECRET HIDDEN]" in sidecar["lines"][0]["text"]
+    assert token not in result.stdout
+
+
+@pytest.mark.parametrize("ops", ["[{}]", "[{\"unknown\": true}]", "[{\"crop\": [0, 0, 0]}]"])
+def test_edit_rejects_malformed_operations_without_traceback(sample_image, ops):
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "snapedit.py"), "edit", str(sample_image), "-o", str(sample_image.with_name(sample_image.stem + "-out.png")), "--ops", ops],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "Traceback" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["grid", "{image}", "-o", "{output}", "--step", "0"],
+        ["gif", "{image}", "-o", "{output}", "--max-width", "0"],
+    ],
+)
+def test_cli_rejects_invalid_dimensions_without_traceback(sample_image, command):
+    output = sample_image.parent / "invalid-output"
+    args = [part.format(image=sample_image, output=output) for part in command]
+    result = subprocess.run([sys.executable, str(ROOT / "snapedit.py"), *args], cwd=ROOT, capture_output=True, text=True)
+    assert result.returncode == 2
+    assert "Traceback" not in result.stderr
+
+
+def test_false_secret_redaction_is_a_no_op(sample_image):
+    assert snapedit.edit(str(sample_image), [{"redact_secrets": False}]).size == (40, 20)
+
+
 @pytest.fixture(scope="session")
-def native_executable():
-    executable = ROOT / "snap.exe"
-    if not executable.exists():
-        result = subprocess.run(
-            [
-                "powershell.exe",
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                str(ROOT / "build.ps1"),
-            ],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            pytest.fail(result.stdout + result.stderr)
+def native_executable(request):
+    prefix = ".native-build-" + uuid.uuid4().hex + "-"
+    executable = ROOT / "tests" / (prefix + "snap.exe")
+
+    def cleanup():
+        for path in executable.parent.glob(prefix + "*"):
+            if path.is_file() or path.is_symlink():
+                path.unlink()
+
+    request.addfinalizer(cleanup)
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ROOT / "build.ps1"),
+            "-OutputPath",
+            str(executable),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        pytest.fail(result.stdout + result.stderr)
     return executable
 
 

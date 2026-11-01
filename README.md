@@ -1,6 +1,6 @@
 # FocusSnap
 
-Fast, focus-safe screen and window capture for Windows with optional OCR text extraction. Captures in under 200ms without stealing focus, with metadata and optional Tesseract OCR integration.
+Fast, focus-safe screen and window capture for Windows with optional OCR text extraction. Captures without stealing focus, with metadata and Windows built-in OCR support.
 
 FocusSnap is designed for automation, accessibility tools, and agents that need to take screenshots without interrupting the user's work or focus context.
 
@@ -37,8 +37,6 @@ snap.exe -Mode window             # Capture active window only
 
 - Windows 7 or later
 - .NET Framework 4.0+ (already installed on most Windows systems)
-- Optional: tesseract.exe for OCR
-
 For `snapedit.py`, install Python 3.8 or newer and Pillow. To run the test suite, also install pytest:
 
 ```bash
@@ -68,7 +66,7 @@ Options:
   - `monitor`: Capture the primary monitor.
   - `window`: Capture the active foreground window.
   - `all`: Capture all monitors.
-  - `auto`: If a foreground window is fullscreen, capture it; otherwise capture the monitor.
+  - `auto`: Capture all monitors when the foreground process is a terminal; otherwise capture the monitor containing the foreground window.
 - `-Region "x,y,w,h"`: Capture a specific rectangular region (in pixels).
 - `-MaxWidth n`: If the output image exceeds this width, scale it down. Default: no scaling. Does not crop, only scales proportionally. Use `0` to disable scaling explicitly.
 
@@ -97,10 +95,10 @@ A PowerShell wrapper that adds Windows built-in OCR. The executable snap.exe is 
 powershell -NoProfile -ExecutionPolicy Bypass -File snap.ps1 [options] [-Ocr]
 ```
 
-Options are the same as snap.exe. Add `-Ocr` to extract text with Tesseract. When `-Ocr` is used, the JSON output includes:
-- `ocr`: The extracted text (keys and tokens are masked).
-- `secrets`: Boolean, true if potential secrets were detected and masked.
-- `text`: Plain text without masking, for direct use if needed.
+Options are the same as snap.exe. Add `-Ocr` to extract text with Windows built-in OCR. When `-Ocr` is used, the JSON output includes:
+- `ocr`: The path to the OCR sidecar JSON file.
+- `secrets`: The number of potential secrets detected and masked.
+- `text`: The recognized text with potential secrets masked.
 
 ### snapedit.py
 
@@ -120,7 +118,7 @@ python snapedit.py find IMG "phrase"                # Find text locations
 - **No focus stealing**: snap.exe never clicks, focuses, minimizes, maximizes, or restores any window. It only reads pixel data and metadata.
 - **Local only**: All snapshots are stored in %LOCALAPPDATA%\Temp\claude-snaps and never leave your machine.
 - **No dependencies on external services**: No cloud calls, no tracking, no telemetry.
-- **Headless**: Runs without a visible window or console.
+- **No GUI**: Runs without opening or changing a window.
 - **Key masking** (when using OCR): Keys, tokens, and passwords are detected and masked in the OCR output.
 
 ## Examples
@@ -137,7 +135,7 @@ List all visible windows (e.g., to find the right name for -App):
 snap.exe -List
 ```
 
-Capture a specific region for 5 seconds:
+Capture a specific region:
 
 ```bash
 snap.exe -Region "100,100,800,600"
@@ -167,7 +165,7 @@ python snapedit.py gif screen1.png screen2.png screen3.png -o demo.gif --ms 1500
 ## Performance
 
 - Capture: 100-200ms (native snap.exe), 400-600ms with PowerShell startup overhead (snap.ps1).
-- OCR: 300-800ms depending on image size and Tesseract availability.
+- OCR: 300-800ms depending on image size and Windows OCR language support.
 - Editing/scaling: 50-200ms per image.
 
 ## Troubleshooting
@@ -176,7 +174,7 @@ python snapedit.py gif screen1.png screen2.png screen3.png -o demo.gif --ms 1500
 
 **csc.exe not found**: Ensure .NET Framework 4.0+ is installed. On modern Windows, this is included by default. If using a minimal installation, install the .NET Framework from Windows Update.
 
-**OCR not working**: Install Tesseract 4.0+. Add the installation directory to your PATH or place tesseract.exe in the current directory.
+**OCR not working**: Install or enable a Windows OCR language pack and rerun the command.
 
 **Region capture returns empty or wrong size**: Verify the region coordinates with `snap.exe -List` first to find the correct window dimensions and monitor origin.
 
