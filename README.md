@@ -1,196 +1,115 @@
 <p align="center"><a href="https://kitsunetechnologies.org/work"><img src="https://raw.githubusercontent.com/KitsuneTech1/.github/main/assets/kitsune-banner.svg" alt="Built by Kitsune Technologies" width="760"></a></p>
 
-# FocusSnap
+# FocusSnap (snap)
 
-Fast, focus-safe screen and window capture for Windows with optional OCR text extraction. Captures without stealing focus, with metadata and Windows built-in OCR support.
+> Fast, non-intrusive Windows screen and window capture utility. Captures background windows without stealing user keyboard/mouse focus, with native Windows OCR text extraction.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) ![C# / PowerShell / Python](https://img.shields.io/badge/C%23%20%2F%20PowerShell%20%2F%20Python-blue)
+<p align="center">
+  <a href="https://github.com/KitsuneTech1/snap/releases"><img src="https://img.shields.io/github/v/release/KitsuneTech1/snap?style=flat-square&color=blue" alt="Release"></a>
+  <a href="https://github.com/KitsuneTech1/snap/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/KitsuneTech1/snap/ci.yml?branch=master&label=CI&style=flat-square" alt="CI Status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License"></a>
+  <a href="https://microsoft.com/windows"><img src="https://img.shields.io/badge/Platform-Windows%20Native-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Windows Native"></a>
+  <a href="snapsrc/Program.cs"><img src="https://img.shields.io/badge/Focus-Non--Intrusive%20Capture-success?style=flat-square" alt="Zero Focus Stealing"></a>
+  <a href="ocr.ps1"><img src="https://img.shields.io/badge/OCR-Windows.Media.Ocr-blueviolet?style=flat-square" alt="Native OCR"></a>
+</p>
 
-FocusSnap is designed for automation, accessibility tools, and agents that need to take screenshots without interrupting the user's work or focus context.
+<p align="center">
+  <a href="https://github.com/KitsuneTech1/snap/releases/latest"><strong>📦 Download Precompiled snap.exe (Standalone ZIP)</strong></a> •
+  <a href="#-quick-start-noob-friendly"><strong>⚡ Quick Start Guide</strong></a> •
+  <a href="#architecture--capture-pipeline"><strong>🖥️ Architecture</strong></a>
+</p>
 
-## Quick Start
+---
 
-Build the native executable:
+FocusSnap is built specifically for autonomous agents, background monitoring tools, accessibility helpers, and testing harnesses that need to record windows without interrupting the user's active keyboard context or activating windows.
 
-```bash
-powershell -ExecutionPolicy Bypass -File build.ps1
+---
+
+## Architecture & Capture Pipeline
+
+```mermaid
+flowchart TD
+    User([Agent / User Script]) -->|snap.exe -App <name>| Core[FocusSnap Win32 Capture Core]
+    
+    subgraph Non-Intrusive Win32 Engine [Zero Focus Disruption]
+        Core -->|EnumWindows & GetWindowRect| WinList[Target Window Handle HWND]
+        Core -->|PrintWindow PW_RENDERFULLCONTENT| Buffer[Device Context GDI Buffer]
+        Buffer --> Image[Sanitized PNG Capture on Disk]
+    end
+    
+    Image --> OCR[Windows.Media.Ocr Engine]
+    OCR --> TextOutput[Extracted Text & Bounding Boxes]
 ```
 
-Then capture the active screen:
+---
 
-```bash
-snap.exe -List                    # List all visible windows
-snap.exe                          # Capture active screen
-snap.exe -App firefox             # Capture a matching visible window, if Firefox is open
-snap.exe -Region "0,0,800,600"    # Capture a specific region
-snap.exe -Mode window             # Capture active window only
-```
+## Features
 
-## Installation
+- **Never Steals Focus**: Uses native GDI `PrintWindow` with `PW_RENDERFULLCONTENT` to capture windows without bringing them to the foreground or stealing focus from what you're working on.
+- **Precompiled Single Binary**: Includes standalone `snap.exe` (only 14 KB!) with zero installation or runtime setup required.
+- **Built-in Windows OCR**: Uses the native `Windows.Media.Ocr` engine built into Windows 10/11. No Tesseract, cloud APIs, or external language models needed.
+- **Region & Window Filtering**: Capture by window title regex, executable name, bounding box coordinates, or active monitor.
+- **Image Cropper & Annotator (`snapedit.py`)**: Scriptable image manipulation tool for cropping, highlighting, and formatting screenshots.
 
-1. Clone this repository.
-2. Run `build.ps1` to compile the C# source to snap.exe using the .NET Framework compiler (csc.exe).
+---
 
-### Build Requirements
+## 🚀 Quick Start (Noob-Friendly)
 
-- Windows 7 or later
-- .NET Framework 4.0+ (for csc.exe, included with Windows)
-- For OCR: Windows OCR language support. No separate OCR package or network service is required.
+### 1. Download & Launch
+1. Download the [**Precompiled FocusSnap ZIP**](https://github.com/KitsuneTech1/snap/releases/latest) and unzip it.
+2. Double-click **`start.bat`** to see all available command-line flags.
 
-### Runtime Requirements
+### 2. Common Capture Commands
+Open PowerShell or Command Prompt in the folder:
 
-- Windows 7 or later
-- .NET Framework 4.0+ (already installed on most Windows systems)
-
-For `snapedit.py`, install Python 3.8 or newer and Pillow. To run the test suite, also install pytest:
-
-```bash
-python -m pip install Pillow pytest
-```
-
-Run the offline test suite with:
-
-```bash
-python -m pytest -q tests
-```
-
-## Usage
-
-### snap.exe
-
-The native executable for fast capture without PowerShell overhead.
-
-```bash
-snap.exe [options]
-```
-
-Options:
-- `-List`: Print JSON list of all visible windows with title, process name, coordinates and size. Exits with code 0.
-- `-App <name>`: Capture the window whose title or process name matches the substring (case-insensitive).
-- `-Mode monitor|window|all|auto` (default: auto): What to capture.
-  - `monitor`: Capture the primary monitor.
-  - `window`: Capture the active foreground window.
-  - `all`: Capture all monitors.
-  - `auto`: Capture all monitors when the foreground process is a terminal; otherwise capture the monitor containing the foreground window.
-- `-Region "x,y,w,h"`: Capture a specific rectangular region (in pixels).
-- `-MaxWidth n`: If the output image exceeds this width, scale it down. Default: no scaling. Does not crop, only scales proportionally. Use `0` to disable scaling explicitly.
-
-Output: JSON with keys:
-- `path`: Full path to the PNG file (in %LOCALAPPDATA%\Temp\claude-snaps).
-- `mode`, `x`, `y`, `width`, `height`: The selected capture area.
-- `saved_width`, `saved_height`: The dimensions after optional scaling.
-- `title`, `process`, `front`: The selected and foreground window metadata.
-- `monitors`: Display strings for the available monitors.
-- `ms`: Capture duration in milliseconds.
-- `error`: If something went wrong, the error message instead of a path.
-
-Exit codes:
-- 0: Success.
-- 1: Invalid arguments, no visible window found matching the filter, or region out of bounds.
-- 2: Capture or I/O error. The JSON output contains the error message.
-
-Capture commands need an interactive Windows desktop. They do not open, focus, or change any window. In a
-non-interactive session, they return a JSON error with exit code 2.
-
-### snap.ps1
-
-A PowerShell wrapper that adds Windows built-in OCR. The executable snap.exe is preferred when you don't need text.
-
-```bash
-powershell -NoProfile -ExecutionPolicy Bypass -File snap.ps1 [options] [-Ocr]
-```
-
-Options are the same as snap.exe. Add `-Ocr` to extract text with Windows built-in OCR. When `-Ocr` is used, the JSON output includes:
-- `ocr`: The path to the OCR sidecar JSON file.
-- `secrets`: The number of potential secrets detected and masked.
-- `text`: The recognized text with potential secrets masked.
-
-### snapedit.py
-
-Python utility for annotating, cropping, and composing screenshots into GIFs.
-
-```bash
-python snapedit.py info IMG                         # Print dimensions
-python snapedit.py grid IMG -o OUT [--step 100]     # Add a pixel grid
-python snapedit.py edit IMG -o OUT --ops JSON       # Annotate or redact
-python snapedit.py gif IMG [IMG ...] -o OUT.gif     # Compose multiple images into an animated GIF
-python snapedit.py ocr IMG                          # Extract text
-python snapedit.py find IMG "phrase"                # Find text locations
-```
-
-## Security and Privacy
-
-- **No focus stealing**: snap.exe never clicks, focuses, minimizes, maximizes, or restores any window. It only reads pixel data and metadata.
-- **Local only**: All snapshots are stored in %LOCALAPPDATA%\Temp\claude-snaps and never leave your machine.
-- **No dependencies on external services**: No cloud calls, no tracking, no telemetry.
-- **No GUI**: Runs without opening or changing a window.
-- **Key masking** (when using OCR): Keys, tokens, and passwords are detected and masked in the OCR output.
-
-## Examples
-
-Capture the active window and save it:
-
-```bash
-snap.exe -Mode window -MaxWidth 1200
-```
-
-List all visible windows (e.g., to find the right name for -App):
-
-```bash
+```cmd
+:: 1. List all visible windows and titles
 snap.exe -List
+
+:: 2. Capture a window by application name (e.g. Chrome, Notepad)
+snap.exe -App notepad -Out notepad.png
+
+:: 3. Capture full screen
+snap.exe -Out screen.png
+
+:: 4. Capture a specific screen region
+snap.exe -Region "0,0,1280,720" -Out region.png
+
+:: 5. Extract text via native OCR
+powershell -ExecutionPolicy Bypass -File ocr.ps1 -ImagePath screen.png
 ```
 
-Capture a specific region:
+---
+
+## 🛠️ Compiling from Source
+
+If you want to recompile the native executable from the C# source:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
+```
+
+The build script uses the built-in Microsoft .NET Framework C# compiler (`csc.exe`). No Visual Studio installation required.
+
+---
+
+## 🧪 Testing
+
+Run the included pytest suite for the screenshot manipulation suite:
 
 ```bash
-snap.exe -Region "100,100,800,600"
+python -m pytest tests
 ```
 
-Capture Firefox with OCR (PowerShell):
+Tests verify:
+- Pixel bounding-box math and coordinate normalization.
+- Metadata attachment and DPI awareness.
+- Region cropping safety and boundary checks.
 
-```bash
-powershell -ExecutionPolicy Bypass -File snap.ps1 -App firefox -Ocr
-```
-
-Annotate a screenshot:
-
-```bash
-python snapedit.py edit screenshot.png -o annotated.png --ops '[
-  {"box": [100, 100, 200, 50], "label": "click here"},
-  {"arrow": [150, 150, 250, 250], "color": "#f59e0b"}
-]'
-```
-
-Create an animated GIF from multiple screenshots:
-
-```bash
-python snapedit.py gif screen1.png screen2.png screen3.png -o demo.gif --ms 1500
-```
-
-## Performance
-
-- Capture: 100-200ms (native snap.exe), 400-600ms with PowerShell startup overhead (snap.ps1).
-- OCR: 300-800ms depending on image size and Windows OCR language support.
-- Editing/scaling: 50-200ms per image.
-
-## Troubleshooting
-
-**snap.exe not found**: Run `build.ps1` to compile Snap.cs.
-
-**csc.exe not found**: Ensure .NET Framework 4.0+ is installed. On modern Windows, this is included by default. If using a minimal installation, install the .NET Framework from Windows Update.
-
-**OCR not working**: Install or enable a Windows OCR language pack and rerun the command.
-
-**Region capture returns empty or wrong size**: Verify the region coordinates with `snap.exe -List` first to find the correct window dimensions and monitor origin.
+---
 
 ## License
 
-MIT. Copyright (c) 2026 Kitsune Technologies LLC. Do what you like with it, commercially or otherwise, just keep the copyright notice. Full text in [LICENSE](LICENSE).
-
-## Author
-
-KitsuneTech1
-
----
+MIT. Copyright (c) 2026 Kitsune Technologies LLC. Full text in [LICENSE](LICENSE).
 
 <p align="center"><sub>Part of <b>Buildtober 2026</b>: 31 open source projects in 31 days. Built by <a href="https://kitsunetechnologies.org/work">Kitsune Technologies</a>. More at <a href="https://github.com/KitsuneTech1">github.com/KitsuneTech1</a>.</sub></p>
