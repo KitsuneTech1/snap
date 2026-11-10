@@ -8,7 +8,7 @@ snap.exe directly when you don't need text; use this only for -Ocr, or if the ex
 Flags pass straight through to snap.exe: -App <name>, -List, -Mode monitor|window|all|auto,
 -Region "x,y,w,h", -MaxWidth n. -Ocr additionally reads the text (Windows OCR, keys masked) and
 merges { ocr, secrets, text } into the JSON. Read-only, hidden, no window. Snaps live in
-%LOCALAPPDATA%\Temp\claude-snaps and never leave the machine.
+%LOCALAPPDATA%\Temp\snaps and never leave the machine.
 #>
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8

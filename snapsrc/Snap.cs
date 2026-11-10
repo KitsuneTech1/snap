@@ -220,7 +220,7 @@ static class Snap {
       x = b.X; y = b.Y; w2 = b.Width; h2 = b.Height; used += "-fallback";
     }
     int sw, sh;
-    string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Temp\claude-snaps");
+    string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Temp\snaps");
     try {
       if (bmp == null) {
         bmp = new Bitmap(w2, h2);
